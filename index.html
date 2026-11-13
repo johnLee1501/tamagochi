@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tamagotchi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --pagina: #e6eaf3;
+    --pagina-texto: #1e2440;
+    --pagina-suave: #5b6385;
+    --carcasa: #6fa8dc;
+    --carcasa-luz: #a9cdee;
+    --carcasa-sombra: #3f78ae;
+    --carcasa-texto: #1e2440;
+    --bisel: #1e2440;
+    --lcd: #bac48f;
+    --tinta: #2d3423;
+    --alerta: #8a5a00;
+    --peligro: #b3261e;
+    --boton: #ffd447;
+    --boton-sombra: #c79f1a;
+    --fuente: "Press Start 2P", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --pagina: #12162a;
+      --pagina-texto: #e6eaf3;
+      --pagina-suave: #9aa3c4;
+      --carcasa: #5b95cc;
+      --carcasa-luz: #8fbbe4;
+      --carcasa-sombra: #2f6296;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: var(--pagina);
+    color: var(--pagina-texto);
+    font-family: var(--fuente);
+  }
+
+  .escena {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 24px 0;
+  }
+
+  /* Carcasa en forma de huevo: más angosta arriba, más ancha abajo */
+  .dispositivo {
+    width: min(360px, 94vw);
+    aspect-ratio: 36 / 46;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    border-radius: 50% / 58% 58% 42% 42%;
+    background: radial-gradient(ellipse at 32% 22%, var(--carcasa-luz) 0 12%, var(--carcasa) 42%, var(--carcasa-sombra) 100%);
+    box-shadow:
+      0 24px 40px -12px rgba(30, 36, 64, .45),
+      inset 0 -14px 24px rgba(30, 36, 64, .25),
+      inset 0 8px 16px rgba(255, 255, 255, .25);
+  }
+
+  .marca { font-size: 10px; color: var(--carcasa-texto); }
+
+  .bisel {
+    padding: 10px;
+    border-radius: 16px;
+    background: var(--bisel);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, .6);
+  }
+
+  /* Pantalla LCD */
+  .pantalla {
+    position: relative;
+    width: 232px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 6px;
+    background: var(--lcd);
+    color: var(--tinta);
+    box-shadow: inset 0 0 14px rgba(45, 52, 35, .35);
+  }
+
+  /* Capa que oscurece la pantalla al dormir */
+  .noche {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    background: var(--tinta);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .barras { display: flex; flex-direction: column; gap: 6px; }
+  .barra {
+    display: grid;
+    grid-template-columns: 64px 1fr 32px;
+    align-items: center;
+    gap: 6px;
+    font-size: 7px;
+  }
+  .pista { height: 9px; padding: 1px; border: 2px solid var(--tinta); }
+  .relleno {
+    height: 100%;
+    width: 100%;
+    background: var(--tinta);
+    transition: width .3s steps(3), background-color .2s;
+  }
+  .relleno.alerta { background: var(--alerta); }
+  .relleno.peligro { background: var(--peligro); animation: parpadeo .8s steps(1) infinite; }
+  .valor { text-align: right; }
+
+  /* Mascota */
+  .zona-mascota { position: relative; height: 100px; display: grid; place-items: center; }
+  .cuerpo { position: relative; line-height: 1; user-select: none; font-size: 44px; }
+  .cuerpo.etapa-1 { font-size: 52px; }
+  .cuerpo.etapa-2 { font-size: 58px; }
+  .cuerpo.fase-vivo { animation: brinco 1.2s steps(1) infinite; }
+  .cuerpo.fase-huevo,
+  .cuerpo.fase-eclosionando { font-size: 52px; transform-origin: 50% 90%; }
+  .cuerpo.fase-huevo { animation: tambaleo 1.6s steps(1) infinite; }
+  .cuerpo.fase-muerto { font-size: 52px; animation: flotar 2.4s ease-in-out infinite; }
+  .corona {
+    position: absolute;
+    left: 50%;
+    top: -.32em;
+    translate: -50% 0;
+    font-size: .4em;
+  }
+
+  /* Comida, Zzz o pelota que aparece junto a la mascota */
+  .efecto {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    z-index: 2;
+    opacity: 0;
+    font-size: 22px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .efecto.efecto-dormir { font-size: 10px; color: var(--tinta); }
+
+  .estado { display: flex; justify-content: space-between; gap: 6px; font-size: 7px; }
+  .turbo { margin-left: 6px; }
+
+  /* Botones físicos */
+  .controles { display: flex; gap: 14px; }
+  .control {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 8px;
+    color: var(--carcasa-texto);
+  }
+  .perilla {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    background: var(--boton);
+    box-shadow: 0 4px 0 var(--boton-sombra), 0 7px 10px rgba(30, 36, 64, .3);
+    transition: transform .06s, box-shadow .06s;
+  }
+  .control:active:not(:disabled) .perilla {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--boton-sombra), 0 2px 4px rgba(30, 36, 64, .3);
+  }
+  .control:focus-visible { outline: none; }
+  .control:focus-visible .perilla { outline: 3px solid var(--bisel); outline-offset: 3px; }
+  .control:disabled { cursor: not-allowed; opacity: .55; }
+  .control:disabled .perilla { filter: grayscale(1); }
+
+  .reiniciar {
+    font: inherit;
+    font-size: 10px;
+    padding: 12px 18px;
+    color: var(--pagina-texto);
+    background: transparent;
+    border: 3px solid var(--pagina-texto);
+    box-shadow: 4px 4px 0 var(--pagina-texto);
+    cursor: pointer;
+  }
+  .reiniciar:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--pagina-texto); }
+  .reiniciar:focus-visible { outline: 3px solid var(--carcasa); outline-offset: 4px; }
+
+  .ayuda {
+    margin: 0;
+    font-size: 8px;
+    line-height: 1.8;
+    color: var(--pagina-suave);
+    text-align: center;
+  }
+
+  @keyframes parpadeo { 50% { opacity: .25; } }
+  @keyframes brinco { 50% { transform: translateY(-5px); } }
+  @keyframes flotar { 50% { transform: translateY(-10px); } }
+  @keyframes tambaleo {
+    25% { transform: rotate(-8deg); }
+    50% { transform: rotate(0); }
+    75% { transform: rotate(8deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cuerpo.fase-vivo, .cuerpo.fase-huevo, .cuerpo.fase-muerto, .relleno.peligro { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="escena">
+  <main class="dispositivo" aria-label="Tamagotchi">
+    <div class="marca">Tamagotchi</div>
+
+    <div class="bisel">
+      <div class="pantalla" id="pantalla">
+        <div class="barras">
+          <div class="barra" data-stat="hambre">
+            <span>Hambre</span>
+            <div class="pista" role="progressbar" aria-label="Hambre" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="relleno"></div></div>
+            <span class="valor">100%</span>
+          </div>
+          <div class="barra" data-stat="energia">
+            <span>Energía</span>
+            <div class="pista" role="progressbar" aria-label="Energía" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="relleno"></div></div>
+            <span class="valor">100%</span>
+          </div>
+          <div class="barra" data-stat="diversion">
+            <span>Diversión</span>
+            <div class="pista" role="progressbar" aria-label="Diversión" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="relleno"></div></div>
+            <span class="valor">100%</span>
+          </div>
+        </div>
+
+        <div class="zona-mascota">
+          <div class="cuerpo fase-huevo etapa-0" id="cuerpo">
+            <span id="mascota">🥚</span>
+            <span class="corona" id="corona" aria-hidden="true" hidden>👑</span>
+          </div>
+          <div class="efecto" id="efecto" aria-hidden="true"></div>
+        </div>
+
+        <div class="estado">
+          <span><span id="izquierda">Presiona un botón</span><span class="turbo" id="turbo" hidden>x10</span></span>
+          <span id="derecha"></span>
+        </div>
+
+        <div class="noche" id="noche" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <div class="controles">
+      <button class="control" type="button" data-accion="alimentar"><span class="perilla" aria-hidden="true">🍖</span>Alimentar</button>
+      <button class="control" type="button" data-accion="dormir"><span class="perilla" aria-hidden="true">💤</span>Dormir</button>
+      <button class="control" type="button" data-accion="jugar"><span class="perilla" aria-hidden="true">⚽</span>Jugar</button>
+    </div>
+  </main>
+
+  <button class="reiniciar" id="reiniciar" type="button" hidden>Reiniciar</button>
+  <p class="ayuda">Teclas 1, 2 y 3 para cuidarlo.<br><span id="ayuda-teclas">R reinicia. M silencia.</span></p>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ===== Reglas del enunciado. Los extras NO las modifican. ===== */
+  const REGLAS = {
+    inicio: 100,    // las barras empiezan en 100 %
+    maximo: 100,    // y nunca pasan de 100 %
+    descuento: 5,   // se restan 5 puntos a las tres barras...
+    cadaMs: 3000,   // ...cada 3 segundos
+    aumento: 20,    // cada botón suma 20 a su barra
+  };
+
+  /* ===== Configuración de los extras ===== */
+  const UMBRAL = { alerta: 50, peligro: 20 };
+  const TURBO = 10; // solo para la demo: la tecla D acelera el tiempo x10
+
+  const BARRAS = ['hambre', 'energia', 'diversion'];
+  const ACCIONES = { alimentar: 'hambre', dormir: 'energia', jugar: 'diversion' };
+  const TECLAS = { '1': 'alimentar', '2': 'dormir', '3': 'jugar' };
+  const CARAS = { huevo: '🥚', feliz: '😸', normal: '😺', triste: '😿', muerta: '👻' };
+
+  // La mascota crece con la edad (segundos de juego)
+  const ETAPAS = [
+    { desde: 0, nombre: 'Cría' },
+    { desde: 30, nombre: 'Joven' },
+    { desde: 60, nombre: 'Adulto' },
+  ];
+
+  // Qué cara pone y qué aparece en pantalla con cada botón
+  const REACCIONES = {
+    alimentar: { cara: '😻', efecto: '🍖' },
+    dormir: { cara: '😽', efecto: 'Zzz' },
+    jugar: { cara: '😹', efecto: '⚽' },
+  };
+
+  const ANIMACIONES = {
+    alimentar: {
+      efecto: [
+        { opacity: 1, transform: 'translate(46px, 8px) scale(1)' },
+        { opacity: 1, transform: 'translate(46px, 8px) scale(.7)' },
+        { opacity: 1, transform: 'translate(46px, 8px) scale(.4)' },
+        { opacity: 0, transform: 'translate(46px, 8px) scale(0)' },
+      ],
+      cuerpo: [
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.12, .9)' },
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.12, .9)' },
+        { transform: 'scale(1)' },
+      ],
+    },
+    dormir: {
+      efecto: [
+        { opacity: 0, transform: 'translate(30px, -4px)' },
+        { opacity: 1, transform: 'translate(36px, -16px)' },
+        { opacity: 1, transform: 'translate(42px, -28px)' },
+        { opacity: 0, transform: 'translate(48px, -40px)' },
+      ],
+      noche: [
+        { opacity: 0 },
+        { opacity: .45, offset: .15 },
+        { opacity: .45, offset: .85 },
+        { opacity: 0 },
+      ],
+    },
+    jugar: {
+      efecto: [
+        { opacity: 1, transform: 'translate(46px, 12px)' },
+        { opacity: 1, transform: 'translate(46px, -14px)' },
+        { opacity: 1, transform: 'translate(46px, 12px)' },
+        { opacity: 1, transform: 'translate(46px, -14px)' },
+        { opacity: 1, transform: 'translate(46px, 12px)' },
+        { opacity: 0, transform: 'translate(46px, 12px)' },
+      ],
+      cuerpo: [
+        { transform: 'translateY(0)' },
+        { transform: 'translateY(-12px)' },
+        { transform: 'translateY(0)' },
+        { transform: 'translateY(-12px)' },
+        { transform: 'translateY(0)' },
+      ],
+    },
+  };
+
+  // Melodías 8-bit: [frecuencia en Hz, inicio en s, duración en s]
+  const MELODIAS = {
+    alimentar: [[660, 0, .08], [880, .09, .1]],
+    dormir: [[523, 0, .15], [392, .16, .25]],
+    jugar: [[523, 0, .07], [659, .08, .07], [784, .16, .12]],
+    alarma: [[1047, 0, .09], [1047, .15, .09]],
+    eclosion: [[392, 0, .06], [523, .08, .06], [659, .16, .06], [784, .24, .06], [1047, .32, .18]],
+    evolucion: [[784, 0, .1], [988, .11, .1], [1175, .22, .1], [1568, .33, .3]],
+    muerte: [[523, 0, .25], [494, .27, .25], [466, .54, .25], [392, .81, .6]],
+  };
+
+  /* ===== Referencias a la pantalla ===== */
+  const $ = (selector) => document.querySelector(selector);
+  const ui = {
+    pantalla: $('#pantalla'),
+    cuerpo: $('#cuerpo'),
+    mascota: $('#mascota'),
+    corona: $('#corona'),
+    efecto: $('#efecto'),
+    noche: $('#noche'),
+    izquierda: $('#izquierda'),
+    derecha: $('#derecha'),
+    turbo: $('#turbo'),
+    reiniciar: $('#reiniciar'),
+    ayudaTeclas: $('#ayuda-teclas'),
+    botones: document.querySelectorAll('[data-accion]'),
+    barras: Object.fromEntries(BARRAS.map((nombre) => {
+      const fila = $(`[data-stat="${nombre}"]`);
+      return [nombre, {
+        pista: fila.querySelector('.pista'),
+        relleno: fila.querySelector('.relleno'),
+        valor: fila.querySelector('.valor'),
+      }];
+    })),
+  };
+
+  /* ===== Animaciones (respetan "reducir movimiento" del sistema) ===== */
+  const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function animar(elemento, cuadros, opciones) {
+    if (sinMovimiento.matches) return null;
+    return elemento.animate(cuadros, opciones);
+  }
+
+  /* ===== Sonido con Web Audio, sin archivos ===== */
+  let audio = null;
+  let silencio = false;
+
+  // El navegador solo permite sonido después de un clic o una tecla
+  function despertarAudio() {
+    const Contexto = window.AudioContext || window.webkitAudioContext;
+    if (!Contexto) return;
+    if (!audio) audio = new Contexto();
+    if (audio.state === 'suspended') audio.resume();
+  }
+
+  function nota(frecuencia, inicio, duracion) {
+    const t = audio.currentTime + inicio;
+    const oscilador = audio.createOscillator();
+    const volumen = audio.createGain();
+    oscilador.type = 'square';
+    oscilador.frequency.setValueAtTime(frecuencia, t);
+    volumen.gain.setValueAtTime(0.05, t);
+    volumen.gain.exponentialRampToValueAtTime(0.0001, t + duracion);
+    oscilador.connect(volumen).connect(audio.destination);
+    oscilador.start(t);
+    oscilador.stop(t + duracion + 0.02);
+  }
+
+  function sonar(nombre) {
+    if (silencio || !audio) return;
+    for (const [frecuencia, inicio, duracion] of MELODIAS[nombre]) nota(frecuencia, inicio, duracion);
+  }
+
+  /* ===== Récord (si el navegador no deja guardar, dura solo la sesión) ===== */
+  const CLAVE_RECORD = 'tamagotchi-record';
+  function leerRecord() {
+    try { return Number(localStorage.getItem(CLAVE_RECORD)) || 0; } catch { return 0; }
+  }
+  function guardarRecord(valor) {
+    try { localStorage.setItem(CLAVE_RECORD, String(valor)); } catch { /* sin almacenamiento */ }
+  }
+
+  /* ===== Estado del juego ===== */
+  let record = leerRecord();
+  let estado;
+  let turbo = false;
+  let descuentoId = null;
+  let relojId = null;
+  let reaccionId = null;
+
+  const limitar = (valor) => Math.max(0, Math.min(REGLAS.maximo, valor));
+
+  function etapa() {
+    let indice = 0;
+    ETAPAS.forEach((e, i) => { if (estado.edad >= e.desde) indice = i; });
+    return indice;
+  }
+
+  // fase: 'huevo' -> 'eclosionando' -> 'vivo' -> 'muerto'
+  function nuevaPartida() {
+    detenerTemporizadores();
+    clearTimeout(reaccionId);
+    turbo = false;
+    estado = {
+      hambre: REGLAS.inicio,
+      energia: REGLAS.inicio,
+      diversion: REGLAS.inicio,
+      fase: 'huevo',
+      edad: 0,
+      reaccion: null,
+      nuevoRecord: false,
+    };
+    render();
+  }
+
+  async function eclosionar() {
+    if (estado.fase !== 'huevo') return;
+    const partida = estado;
+    partida.fase = 'eclosionando';
+    render();
+    const sacudida = animar(ui.cuerpo, [
+      { transform: 'rotate(0)' },
+      { transform: 'rotate(-14deg)' },
+      { transform: 'rotate(14deg)' },
+      { transform: 'rotate(-14deg)' },
+      { transform: 'rotate(14deg)' },
+      { transform: 'rotate(0) scale(1.15)' },
+    ], { duration: 900, easing: 'steps(10)' });
+    if (sacudida) await sacudida.finished.catch(() => {});
+    if (estado !== partida || partida.fase !== 'eclosionando') return;
+
+    partida.fase = 'vivo';
+    sonar('eclosion');
+    programarTemporizadores();
+    render();
+    animar(ui.cuerpo, [
+      { transform: 'scale(.4)' },
+      { transform: 'scale(1.2)' },
+      { transform: 'scale(1)' },
+    ], { duration: 350, easing: 'steps(4)' });
+  }
+
+  /* ===== Temporizadores ===== */
+  function programarTemporizadores() {
+    detenerTemporizadores();
+    const velocidad = turbo ? TURBO : 1;
+    descuentoId = setInterval(descontar, REGLAS.cadaMs / velocidad);
+    relojId = setInterval(envejecer, 1000 / velocidad);
+  }
+
+  function detenerTemporizadores() {
+    clearInterval(descuentoId);
+    clearInterval(relojId);
+  }
+
+  function descontar() {
+    let entroEnPeligro = false;
+    for (const nombre of BARRAS) {
+      const antes = estado[nombre];
+      estado[nombre] = limitar(antes - REGLAS.descuento);
+      if (antes > UMBRAL.peligro && estado[nombre] <= UMBRAL.peligro) entroEnPeligro = true;
+    }
+    if (BARRAS.some((nombre) => estado[nombre] === 0)) morir();
+    else if (entroEnPeligro) sonar('alarma');
+    render();
+    if (estado.fase === 'muerto') ui.reiniciar.focus();
+  }
+
+  function envejecer() {
+    const antes = etapa();
+    estado.edad += 1;
+    if (etapa() > antes) evolucionar();
+    render();
+  }
+
+  /* ===== Acciones ===== */
+  function actuar(accion) {
+    despertarAudio();
+    if (estado.fase === 'huevo') { eclosionar(); return; }
+    if (estado.fase !== 'vivo') return;
+    const nombre = ACCIONES[accion];
+    estado[nombre] = limitar(estado[nombre] + REGLAS.aumento);
+    sonar(accion);
+    reaccionar(accion);
+    render();
+  }
+
+  function reaccionar(accion) {
+    estado.reaccion = REACCIONES[accion].cara;
+    clearTimeout(reaccionId);
+    reaccionId = setTimeout(() => { estado.reaccion = null; render(); }, 1200);
+
+    const animacion = ANIMACIONES[accion];
+    ui.efecto.textContent = REACCIONES[accion].efecto;
+    ui.efecto.className = `efecto efecto-${accion}`;
+    ui.efecto.getAnimations().forEach((a) => a.cancel());
+    animar(ui.efecto, animacion.efecto, { duration: 1200, easing: 'steps(8)' });
+    if (animacion.cuerpo) animar(ui.cuerpo, animacion.cuerpo, { duration: 800, easing: 'steps(8)' });
+    if (animacion.noche) animar(ui.noche, animacion.noche, { duration: 1400, easing: 'ease-in-out' });
+  }
+
+  function evolucionar() {
+    sonar('evolucion');
+    animar(ui.cuerpo, [
+      { transform: 'scale(1) rotate(0)' },
+      { transform: 'scale(1.3) rotate(180deg)' },
+      { transform: 'scale(1) rotate(360deg)' },
+    ], { duration: 700, easing: 'steps(8)' });
+  }
+
+  function morir() {
+    estado.fase = 'muerto';
+    estado.reaccion = null;
+    detenerTemporizadores();
+    clearTimeout(reaccionId);
+    if (estado.edad > record) {
+      record = estado.edad;
+      estado.nuevoRecord = true;
+      guardarRecord(record);
+    }
+    sonar('muerte');
+    animar(ui.pantalla, [
+      { filter: 'invert(0)' },
+      { filter: 'invert(1)' },
+      { filter: 'invert(0)' },
+      { filter: 'invert(1)' },
+      { filter: 'invert(0)' },
+    ], { duration: 700, easing: 'steps(4)' });
+  }
+
+  function reiniciar() {
+    despertarAudio();
+    nuevaPartida();
+    eclosionar();
+  }
+
+  /* ===== Dibujo ===== */
+  function cara() {
+    if (estado.fase === 'huevo' || estado.fase === 'eclosionando') return CARAS.huevo;
+    if (estado.fase === 'muerto') return CARAS.muerta;
+    if (estado.reaccion) return estado.reaccion;
+    const minimo = Math.min(...BARRAS.map((nombre) => estado[nombre]));
+    if (minimo > 60) return CARAS.feliz;
+    if (minimo > 30) return CARAS.normal;
+    return CARAS.triste;
+  }
+
+  function render() {
+    for (const nombre of BARRAS) {
+      const valor = estado[nombre];
+      const { pista, relleno, valor: texto } = ui.barras[nombre];
+      relleno.style.width = `${valor}%`;
+      relleno.classList.toggle('alerta', valor <= UMBRAL.alerta && valor > UMBRAL.peligro);
+      relleno.classList.toggle('peligro', valor <= UMBRAL.peligro);
+      texto.textContent = `${valor}%`;
+      pista.setAttribute('aria-valuenow', valor);
+    }
+
+    const { fase } = estado;
+    const vivo = fase === 'vivo';
+    const nivel = etapa();
+
+    ui.mascota.textContent = cara();
+    ui.cuerpo.className = `cuerpo fase-${fase} etapa-${nivel}`;
+    ui.corona.hidden = !(vivo && nivel === ETAPAS.length - 1);
+    ui.botones.forEach((boton) => { boton.disabled = fase === 'muerto'; });
+    ui.reiniciar.hidden = fase !== 'muerto';
+    ui.turbo.hidden = !(turbo && vivo);
+
+    if (vivo) {
+      ui.izquierda.textContent = `Edad ${estado.edad} s`;
+      ui.derecha.textContent = ETAPAS[nivel].nombre;
+    } else if (fase === 'muerto') {
+      ui.izquierda.textContent = `Vivió ${estado.edad} s`;
+      ui.derecha.textContent = estado.nuevoRecord ? '¡Récord!' : `Récord ${record} s`;
+    } else {
+      ui.izquierda.textContent = 'Presiona un botón';
+      ui.derecha.textContent = record ? `Récord ${record} s` : '';
+    }
+
+    ui.ayudaTeclas.textContent = silencio ? 'R reinicia. M activa el sonido.' : 'R reinicia. M silencia.';
+  }
+
+  /* ===== Controles ===== */
+  ui.botones.forEach((boton) => {
+    boton.addEventListener('click', () => actuar(boton.dataset.accion));
+  });
+  ui.reiniciar.addEventListener('click', reiniciar);
+
+  document.addEventListener('keydown', (evento) => {
+    if (evento.repeat || evento.ctrlKey || evento.metaKey || evento.altKey) return;
+    const tecla = evento.key.toLowerCase();
+    if (TECLAS[tecla]) {
+      actuar(TECLAS[tecla]);
+    } else if (tecla === 'r' && estado.fase === 'muerto') {
+      reiniciar();
+    } else if (tecla === 'd' && estado.fase === 'vivo') {
+      turbo = !turbo;
+      programarTemporizadores();
+      render();
+    } else if (tecla === 'm') {
+      silencio = !silencio;
+      render();
+    }
+  });
+
+  nuevaPartida();
+})();
+</script>
+</body>
+</html>
